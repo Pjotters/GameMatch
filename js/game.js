@@ -36,7 +36,7 @@ class Game {
         this.scene.background = new THREE.Color(0x87CEEB); // Blauwe lucht
         
         // Voeg een vloer toe als tijdelijke referentie
-        const floorGeometry = new THREE.PlaneGeometry(100, 100);
+        const floorGeometry = new THREE.PlaneGeometry(200, 200);
         const floorMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x2E8B57, 
             roughness: 0.8,
@@ -46,12 +46,22 @@ class Game {
         this.floor.rotation.x = -Math.PI / 2;
         this.floor.receiveShadow = true;
         this.scene.add(this.floor);
+        
+        // Voeg het stadion toe
+        this.stadium = new Stadium(this.scene);
     }
     
     initCamera() {
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(0, 10, 20);
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+        // Plaats de camera aan de zijkant van het veld
+        this.camera.position.set(-70, 40, 0);
         this.camera.lookAt(0, 0, 0);
+        
+        // Voeg een camera helper toe voor debugging
+        if (window.location.hash === '#debug') {
+            this.cameraHelper = new THREE.CameraHelper(this.camera);
+            this.scene.add(this.cameraHelper);
+        }
     }
     
     initLights() {
@@ -79,27 +89,103 @@ class Game {
         
         // Toetsenbord besturing
         this.keys = {};
-        window.addEventListener('keydown', (e) => this.keys[e.code] = true);
-        window.addEventListener('keyup', (e) => this.keys[e.code] = false);
+        window.addEventListener('keydown', (e) => {
+            this.keys[e.code] = true;
+            this.handleInput();
+            
+            // Voorkom standaard gedrag voor pijltjestoetsen
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+                e.preventDefault();
+            }
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            this.keys[e.code] = false;
+        });
+        
+        // Voeg muisklik toe om te schieten
+        window.addEventListener('click', (e) => this.handleMouseClick(e));
+    }
+    
+    handleInput() {
+        if (!this.controlledPlayer) return;
+        
+        const moveSpeed = 0.1;
+        const turnSpeed = 0.05;
+        
+        // Beweeg vooruit/achteruit
+        if (this.keys['ArrowUp']) {
+            this.controlledPlayer.velocity.x = -Math.sin(this.controlledPlayer.mesh.rotation.z) * moveSpeed;
+            this.controlledPlayer.velocity.z = -Math.cos(this.controlledPlayer.mesh.rotation.z) * moveSpeed;
+        } else if (this.keys['ArrowDown']) {
+            this.controlledPlayer.velocity.x = Math.sin(this.controlledPlayer.mesh.rotation.z) * moveSpeed;
+            this.controlledPlayer.velocity.z = Math.cos(this.controlledPlayer.mesh.rotation.z) * moveSpeed;
+        } else {
+            this.controlledPlayer.velocity.x = 0;
+            this.controlledPlayer.velocity.z = 0;
+        }
+        
+        // Draai links/rechts
+        if (this.keys['ArrowLeft']) {
+            this.controlledPlayer.mesh.rotation.z += turnSpeed;
+        } else if (this.keys['ArrowRight']) {
+            this.controlledPlayer.mesh.rotation.z -= turnSpeed;
+        }
+        
+        // Springen
+        if (this.keys['Space'] && this.controlledPlayer.isGrounded) {
+            this.controlledPlayer.velocity.y = 0.15;
+            this.controlledPlayer.isGrounded = false;
+        }
+    }
+    
+    handleMouseClick(event) {
+        if (!this.controlledPlayer || !this.ball) return;
+        
+        // Controleer of de speler dicht bij de bal is
+        const dx = this.controlledPlayer.mesh.position.x - this.ball.mesh.position.x;
+        const dz = this.controlledPlayer.mesh.position.z - this.ball.mesh.position.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        
+        if (distance < 2) {
+            // Bereken de richting waarin de speler kijkt
+            const angle = this.controlledPlayer.mesh.rotation.z;
+            
+            // Geef de bal een zet in de kijkrichting
+            this.ball.kick(10, angle);
+        }
     }
     
     async loadAssets() {
-        // Hier komen later de 3D-modellen en texturen
-        // Voor nu simuleren we een laadtijd
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Update de laadbalk
         const progressBar = document.getElementById('loading-progress');
         let progress = 0;
-        const interval = setInterval(() => {
-            progress += 5;
+        
+        // Simuleer het laden van assets
+        const updateProgress = (step) => {
+            progress = Math.min(progress + step, 100);
             progressBar.style.width = `${progress}%`;
-            
-            if (progress >= 100) {
-                clearInterval(interval);
+            return new Promise(resolve => setTimeout(resolve, 100));
+        };
+        
+        // Laad het stadion
+        await updateProgress(30);
+        
+        // Laad spelers (placeholder voor nu)
+        await updateProgress(30);
+        
+        // Laad de bal (placeholder voor nu)
+        await updateProgress(20);
+        
+        // Laad texturen en modellen
+        await updateProgress(20);
+        
+        return new Promise(resolve => {
+            // Wacht nog even zodat de laadbalk 100% bereikt
+            setTimeout(() => {
+                progressBar.style.width = '100%';
                 resolve();
-            }
-        }, 100);
+            }, 300);
+        });
     }
     
     hideLoadingScreen() {
@@ -116,17 +202,132 @@ class Game {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
     
+    async loadAssets() {
+        const progressBar = document.getElementById('loading-progress');
+        let progress = 0;
+        
+        // Simuleer het laden van assets
+        const updateProgress = (step) => {
+            progress = Math.min(progress + step, 100);
+            progressBar.style.width = `${progress}%`;
+            return new Promise(resolve => setTimeout(resolve, 100));
+        };
+        
+        // Laad het stadion
+        await updateProgress(20);
+        
+        // Initialiseer de bal
+        this.ball = new Ball(this.scene);
+        await updateProgress(20);
+        
+        // Maak de teams
+        this.players = [];
+        this.createTeam('home', -20); // Thuisteam aan de linkerkant
+        this.createTeam('away', 20);  // Uitteam aan de rechterkant
+        await updateProgress(30);
+        
+        // Maak een speler bestuurbaar
+        if (this.players.length > 0) {
+            this.controlledPlayer = this.players[0];
+            this.controlledPlayer.isPlayerControlled = true;
+        }
+        
+        // Laad texturen en modellen
+        await updateProgress(20);
+        
+        // Stel de camera in om de bestuurde speler te volgen
+        if (this.controlledPlayer) {
+            this.setupCameraFollow();
+        }
+        
+        return new Promise(resolve => {
+            // Wacht nog even zodat de laadbalk 100% bereikt
+            setTimeout(() => {
+                progressBar.style.width = '100%';
+                resolve();
+            }, 300);
+        });
+    }
+    
+    createTeam(team, startX) {
+        const positions = [
+            { x: startX, z: 0 },    // Midden
+            { x: startX, z: -10 },  // Voor
+            { x: startX, z: 10 },   // Achter
+            { x: startX - 5, z: -5 }, // Links voor
+            { x: startX - 5, z: 5 },  // Links achter
+            { x: startX + 5, z: -5 }, // Rechts voor
+            { x: startX + 5, z: 5 },  // Rechts achter
+        ];
+        
+        for (let i = 0; i < positions.length; i++) {
+            const player = new Player(this.scene, team, positions[i]);
+            this.players.push(player);
+        }
+    }
+    
+    setupCameraFollow() {
+        // Maak een leeg object om de camera aan vast te maken
+        this.cameraTarget = new THREE.Object3D();
+        this.scene.add(this.cameraTarget);
+        
+        // Plaats de camera achter en boven de speler
+        this.cameraOffset = new THREE.Vector3(0, 10, 15);
+        
+        // Koppel de camera aan het doelwit
+        this.camera.lookAt(this.cameraTarget.position);
+    }
+    
     update(delta) {
         if (this.isPaused) return;
         
         // Update controls
         if (this.controls) this.controls.update();
         
-        // Update spelers en bal (wordt later toegevoegd)
+        // Update de bal
+        if (this.ball) {
+            this.ball.update(delta);
+        }
+        
+        // Update spelers
+        this.players.forEach(player => {
+            // Laat de AI de bal volgen als de speler niet door de speler wordt bestuurd
+            if (!player.isPlayerControlled) {
+                player.updateAI(this.ball);
+            }
+            player.update(delta);
+        });
+        
+        // Volg de bestuurde speler met de camera
+        this.updateCameraFollow();
         
         // Update speeltijd
         this.matchTime += delta;
         this.updateScoreboard();
+    }
+    
+    updateCameraFollow() {
+        if (!this.controlledPlayer || !this.cameraTarget) return;
+        
+        const player = this.controlledPlayer.mesh;
+        
+        // Update de positie van het cameradoel
+        this.cameraTarget.position.lerp(player.position, 0.1);
+        
+        // Bereken de gewenste camerapositie
+        const desiredPosition = new THREE.Vector3();
+        desiredPosition.copy(player.position);
+        
+        // Pas de offset toe op basis van de kijkrichting van de speler
+        const offset = this.cameraOffset.clone();
+        offset.applyQuaternion(player.quaternion);
+        desiredPosition.add(offset);
+        
+        // Beweeg de camera soepel naar de gewenste positie
+        this.camera.position.lerp(desiredPosition, 0.1);
+        
+        // Laat de camera naar het doelwit kijken
+        this.camera.lookAt(this.cameraTarget.position);
     }
     
     updateScoreboard() {
